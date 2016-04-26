@@ -3,6 +3,7 @@
 #		entries:
 #			<identifier>:
 #				name: <string> # Name of the entry
+#				description: <string> # Description in Markdown
 #				required: <boolean> # Required or not
 #				type: <textline|textarea|instructions...>
 #				maxLength: <number> # Maximum line length
@@ -10,38 +11,6 @@
 #		maxId: <number>
 #		<id>:
 #			<identifier>: <value> # Value for the entry
-
-exports.onUpgrade = !->
-	# Test data
-	Db.shared.set "form",
-		entries:
-			header:
-				type: "instruction"
-				markdown: """
-					# Staff application
-					Make your staff application here
-				"""
-				order: 0
-			firstname:
-				type: "textline"
-				order: 1
-				name: "First name"
-				required: true
-			lastname:
-				type: "textline"
-				order: 2
-				name: "Last name"
-				required: true
-			username:
-				type: "textline"
-				order: 3
-				name: "Username"
-				required: true
-			country:
-				type: "textline"
-				order: 4
-				name: "Country"
-				required: true
 
 
 # Remove an entry from the form
@@ -67,25 +36,19 @@ exports.client_swapEntries = (firstIdentifier, secondIdentifier) !->
 	second.set 'order', firstOrder
 
 
-# Add an entry
-exports.client_addEntry = (identifier, data) !->
-	App.assertAdmin()
-	log "[addEntry] by #{member()}, identifier:", identifier, 'data:', JSON.stringify(data)
-
-	return if !identifier? or !data?
-	entry = Db.shared.ref 'form', 'entries', identifier
-	if entry.peek()?
-		log '[addEntry] already exists!'
-		return
-	entry.set data
-
-
 # Edit an entry
 exports.client_editEntry = (identifier, data) !->
 	App.assertAdmin()
 	log "[editEntry] by #{member()}, identifier:", identifier, 'data:', JSON.stringify(data)
 
-	return if !identifier? or !data?
+	return if !data?
+	if !identifier? or identifier.length is 0
+		log 'generating id'
+		identifier = Db.shared.incr 'form', 'maxEntry'
+		data.order = 0
+		Db.shared.iterate 'form', 'entries', (entryO) !->
+			o = ((+entryO.peek('order'))||0)
+			data.order = o+1 if o >= data.order
 	Db.shared.set 'form', 'entries', identifier, data
 
 
