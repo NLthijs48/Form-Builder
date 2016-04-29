@@ -3,10 +3,6 @@ tr = I18n.tr
 exports.render = ->
 	Comments.disable()
 
-	Dom.style
-		height: '100%'
-		backgroundColor: '#EEE'
-
 	page = Page.state.get 0
 	if page? # Form id
 		new FormLayout
@@ -83,7 +79,7 @@ class FormLayout
 	addPart: !->
 		form = @
 
-		Modal.show tr("Add a part"), !->
+		Modal.show tr("What do you want to add?"), !->
 			renderItem = (entry) !->
 				Ui.item
 					content: entry.displayName
@@ -95,18 +91,6 @@ class FormLayout
 				renderItem entry
 		, undefined
 		, false # No buttons
-
-
-makeType = (type, form, dataO) ->
-	if !dataO?
-		dataO = Obs.create
-			type: type
-	if type is 'textline'
-		new TextlineEntry(form, dataO)
-	else if type is 'instruction'
-		new InstructionEntry(form, dataO)
-	else if type is 'selection'
-		new SelectionEntry(form, dataO)
 
 
 # User view
@@ -126,7 +110,6 @@ class Entry
 		@dataO = if dataO? then dataO else Obs.create()
 		@identifier = @dataO.key()
 		@containerE = undefined # Container dom element
-		@margin = 4
 		entry = @
 		form.entries[@dataO.key()] = entry if @dataO.key()?
 
@@ -136,44 +119,42 @@ class Entry
 		Dom.div !->
 			Dom.style
 				background: '#fff'
-				MarginPolicy: 'pad'
-				paddingTop: '8px'
-				paddingBottom: '8px'
-				marginTop: "#{entry.margin}px"
-				marginBottom: "#{entry.margin}px"
+				padding: '0 12px'
+				margin: '12px 0'
 				overflow: 'hidden'
 				position: 'relative'
 			entry.containerE = Dom.get()
+			iconColor = '#ba1a6e'
 			if entry.form.editingO.get()
 				Dom.div !->
 					Dom.style
 						Box: 'horizontal middle'
 					# Order buttons
 					Dom.div !->
+						# Up
 						Dom.style
-							Box: 'vertical middle center'
+							Box: 'horizontal middle center'
 						Dom.div !->
 							Dom.style
-								padding: '10px'
-								marginLeft: '-10px'
+								padding: '10px 8px'
+								marginLeft: '-12px'
 							Dom.div !->
 								Dom.style
 									borderStyle: 'solid'
-									borderWidth: '0 7px 10px 7px'
-									borderColor: 'transparent transparent #BA1A6E transparent'
+									borderWidth: '0 9px 14px 9px'
+									borderColor: "transparent transparent #{iconColor} transparent"
 							Dom.onTap !->
 								entry.move 'up'
-
-
+						# Down
 						Dom.div !->
 							Dom.style
-								padding: '10px'
-								marginLeft: '-10px'
+								padding: '10px 8px'
+								marginRight: '10px'
 							Dom.div !->
 								Dom.style
 									borderStyle: 'solid'
-									borderWidth: '10px 7px 0 7px'
-									borderColor: '#BA1A6E transparent transparent transparent'
+									borderWidth: '14px 9px 0 9px'
+									borderColor: "#{iconColor} transparent transparent transparent"
 							Dom.onTap !->
 								entry.move 'down'
 					# Content
@@ -182,26 +163,27 @@ class Entry
 						entry.renderType()
 					# Right side buttons
 					Dom.div !->
-						Dom.style Box: 'vertical middle center'
+						Dom.style Box: 'horizontal middle center'
 						# Edit button
 						Icon.render
 							data: 'edit'
-							color: '#BA1A6E'
+							color: iconColor
 							size: 20
 							style:
 								padding: '10px'
-								marginRight: '-10px'
 								marginTop: '-10px'
+								marginBottom: '-10px'
+								marginLeft: '10px'
 							onTap: !->
 								entry.edit()
 						# Remove button
 						Icon.render
 							data: 'trash'
-							color: '#BA1A6E'
+							color: iconColor
 							size: 20
 							style:
 								padding: '10px'
-								marginRight: '-10px'
+								marginTop: '-10px'
 								marginBottom: '-10px'
 							onTap: !->
 								Modal.confirm tr("Remove?"), tr("Are you sure you want to remove this component?"), (value) !->
@@ -217,8 +199,7 @@ class Entry
 											Server.sync 'removeEntry', entry.dataO.key(), !->
 												Db.shared.remove 'form', 'entries', entry.dataO.key()
 			else
-				Dom.div !->
-					entry.renderType()
+				entry.renderType()
 
 
 	# Move the entry up or down
@@ -249,42 +230,48 @@ class Entry
 		entry.containerE.transition
 			initial:
 				zIndex: 1
-			Translate: [0,(if direction is 'up' then -1 else 1)*(otherHeight+entry.margin)]
+			Translate: [0,(if direction is 'up' then -1 else 1)*(otherHeight+12)]
 			time: time
 			onDone: !->
 				Server.sync 'swapEntries', entry.dataO.key(), swapWith.dataO.key(), !->
 					swapWith.dataO.set 'order', entry.dataO.peek('order')
 					entry.dataO.set 'order', currentOrder
 		swapWith.containerE.transition
-			Translate: [0,(if direction is 'up' then 1 else -1)*(selfHeight+swapWith.margin)]
+			Translate: [0,(if direction is 'up' then 1 else -1)*(selfHeight+12)]
 			time: time
 
 	# Edit details
-	# opts.cb: callback that is called with the result
-	edit: (opts) !->
+	edit: !->
 		entry = @
+		editing = entry.dataO.peek('order')?
+
+		submit = (values = {}) !->
+			values.type = entry.dataO.peek 'type'
+			if (order = entry.dataO.peek 'order')?
+				values.order = order
+
+			Server.sync 'editEntry', entry.identifier, values, !->
+				if !entry.identifier?
+					# Copy to prevent changing the actual values instance for the server call
+					data = {}
+					for k,v of values
+						data[k] = v
+					data.order = 0
+					Db.shared.iterate 'form', 'entries', (entryO) !->
+						o = ((+entryO.peek('order'))||0)
+						data.order = o+1 if o >= data.order
+				Db.shared.set 'form', 'entries', entry.identifier, data ? values
+			Page.back()
 
 		Page.nav !->
-			entry.renderEdit()
+			if entry.renderEdit() is false # Nothing to edit
+				submit()
+				return
+
+			Page.setTitle if editing then tr("Editing %1", entry.constructor.displayName.toLowerCase()) else tr("Adding %1", entry.constructor.displayName.toLowerCase())
 
 			# Give back the result
-			Form.setPageSubmit (values) !->
-				values.type = entry.dataO.peek 'type'
-				if (order = entry.dataO.peek 'order')?
-					values.order = order
-
-				Server.sync 'editEntry', entry.identifier, values, !->
-					if !entry.identifier?
-						# Copy to prevent changing the actual values instance for the server call
-						data = {}
-						for k,v of values
-							data[k] = v
-						data.order = 0
-						Db.shared.iterate 'form', 'entries', (entryO) !->
-							o = ((+entryO.peek('order'))||0)
-							data.order = o+1 if o >= data.order
-					Db.shared.set 'form', 'entries', entry.identifier, data ? values
-				Page.back()
+			Form.setPageSubmit submit, if editing then undefined else 2
 
 	# Render a required checkbox
 	renderRequired: !->
@@ -294,17 +281,59 @@ class Entry
 			text: tr('Field is required')
 			sub: tr('Make it mandatory to enter this field')
 
-	# Markdown description field
-	renderDescription: ->
+
+# Separator line
+class SeparatorEntry extends Entry
+	@entryType: 'separator'
+	@displayName: tr("Separator line")
+	@description: tr("A line to visually separate sections of the form")
+
+	renderType: !->
+		entry = @
+		Dom.style
+			minHeight: if (height = entry.dataO.get('height'))? and height.length > 0 then height else '5px'
+			backgroundColor: '#eee'
+			padding: 0
+			marginBottom: 0
+
+	renderEdit: !->
+		entry = @
+		Form.label tr("Separator height")
+		Form.input
+			name: 'height'
+			text: '5px'
+			autofocus: true
+			value: entry.dataO.get 'height'
+			style:
+				marginTop: '3px'
+				marginBottom: 0
+
+
+# Markdown instruction block
+class InstructionEntry extends Entry
+	@entryType: 'instruction'
+	@displayName: tr("Instruction block")
+	@description: tr("A markdown block with instructions or an explanation")
+
+	renderType: !->
+		entry = @
+		if (description = entry.dataO.get('description'))?
+			Dom.markdown description
+
+	renderEdit: !->
+		entry = @
+		Form.label tr('Instructions')
 		Form.smallLabel !->
 			Dom.style marginTop: 0
 			Dom.text 'Markdown can be used' # TODO link to markdown explanation?
-		Form.text
+		field = Form.text
 			name: 'description'
 			value: @dataO.get 'description'
 			style:
 				marginTop: '8px'
 				marginBottom: '5px'
+		field.focus()
+
 
 # Text line entry
 class TextlineEntry extends Entry
@@ -314,102 +343,143 @@ class TextlineEntry extends Entry
 
 	renderType: !->
 		entry = @
-
-		# Description
-		if (description = entry.dataO.get('description'))?
-			Dom.markdown description
-		# Input
 		Form.input
 			name: entry.identifier
 			style:
-				marginTop: '3px'
-				marginBottom: 0
-		# Required or not
-		if entry.dataO.get 'required' # TODO render star somewhere?
-			Form.condition (value) ->
-				return tr("This field is required") if !value[entry.identifier]
+				marginTop: '2px'
+				marginBottom: '4px'
+		if entry.dataO.get 'required'
+			Dom.div !->
+				Dom.style
+					marginTop: '12px'
+					marginBottom: '-12px'
+				Form.condition (value) ->
+					return tr("You need to fill in this field") if !value[entry.identifier]
 
 
 	renderEdit: !->
 		entry = @
 
-		Form.label tr('Description')
-		entry.renderDescription().focus()
 		entry.renderRequired()
 
 
-# Markdown entry
-class InstructionEntry extends Entry
-	@entryType: 'instruction'
-	@displayName: tr("Instruction block")
-	@description: tr("A markdown block with instructions or an explanation")
+# Text area entry
+class TextareaEntry extends Entry
+	@entryType: 'textarea'
+	@displayName: tr("Text area")
+	@description: tr("A text area for writing more than one line of text")
 
 	renderType: !->
 		entry = @
+		Form.text
+			name: entry.identifier
+			style:
+				marginTop: '8px'
+				marginBottom: '5px'
+		if entry.dataO.get 'required'
+			Dom.div !->
+				Dom.style
+					marginTop: '12px'
+					marginBottom: '-12px'
+				Form.condition (value) ->
+					return tr("You need to fill in this textarea") if !value[entry.identifier]
 
-		if (description = entry.dataO.get('description'))?
-			Dom.markdown description
 
 	renderEdit: !->
 		entry = @
 
-		Form.label tr('Instructions')
-		entry.renderDescription().focus()
+		entry.renderRequired()
+
+
+# Checkbox
+class CheckboxEntry extends Entry
+	@entryType: 'checkbox'
+	@displayName: tr("Checkbox")
+	@description: tr("A checkbox that can be ticked")
+
+	renderType: !->
+		entry = @
+		Form.check
+			name: !->
+				Dom.style padding: '0 12px'
+				Dom.text entry.identifier
+			text: entry.dataO.get 'title'
+			sub: entry.dataO.get 'description'
+		if entry.dataO.get 'required' # TODO render star somewhere?
+			Form.condition (value) ->
+				return tr("This checkbox is required") if !value[entry.identifier]
+
+	renderEdit: !->
+		entry = @
+
+		Form.label tr("Checkbox title")
+		Form.input
+			name: 'title'
+			autofocus: true
+			value: entry.dataO.get 'title'
+			style:
+				marginTop: '3px'
+				marginBottom: 0
+
+		Form.label tr("Checkbox description")
+		Form.input
+			name: 'description'
+			value: entry.dataO.get 'description'
+			style:
+				marginTop: '3px'
+				marginBottom: '16px'
+
+		entry.renderRequired()
 
 
 # Selector
-class SelectionEntry extends Entry
-	@entryType: 'selection'
-	@displayName: tr("Selection list")
-	@description: tr("A list in which items can be ticked")
+class SelectorEntry extends Entry
+	@entryType: 'selector'
+	@displayName: tr("Selector")
+	@description: tr("Select an option from a list")
 
 	renderType: !->
 		entry = @
+		Form.selectInput
+			name: entry.identifier
+			title: "Things"
+			options:
+				0: ["text", "Text field"]
+				1: ["date", "Date picker"]
+				2: ["number", "Numeric value"]
+				3: ["url", "Web URL"]
+			default: 0
 
-		# Description
-		if (description = entry.dataO.get 'description')?
-			Dom.markdown description
+		# TODO
 
-		###
-		Form.segmented
-			name: 'mode'
-			value: 'single'
-			segments: ['one', tr("Thing one"), 'two', tr("Thing two")]
-			description: !->
-				Dom.text tr("Select a thing")
-			onChange: (v) !->
-				log 'new:', v
-
-
-		Dom.css
-			'.form-check:checked':
-				border: '2px solid green !important'
-				backgroundColor: 'green !important'
-
-		Form.check
-			name: 'check'
-			text: "Instruction"
-			sub: "More detail in here somewhere"
-			style:
-				borderRadius: '50%'
-				border: '2px solid #777'
-				background: 'none'
-			onChange: (v) !->
-				log 'checked:', v
-		###
-
+		if entry.dataO.get 'required' # require not selecting default?
+			Form.condition (value) ->
+				return tr("This checkbox is required") if !value[entry.identifier]
 
 	renderEdit: !->
 		entry = @
 
-		# Description
-		Form.label tr('Description')
-		entry.renderDescription().focus()
+		# TODO
 
-		# Options
-		options = Obs.create entry.dataO.get('options')
-		Form.label tr("")
+		entry.renderRequired()
 
 
 # List of all entries
-entries = [TextlineEntry, InstructionEntry, SelectionEntry]
+entries = [TextlineEntry, TextareaEntry, CheckboxEntry, SelectorEntry, InstructionEntry, SeparatorEntry]
+
+makeType = (type, form, dataO) ->
+	if !dataO?
+		dataO = Obs.create
+			type: type
+	if type is 'textline'
+		new TextlineEntry form, dataO
+	else if type is 'instruction'
+		new InstructionEntry form, dataO
+	else if type is 'checkbox'
+		new CheckboxEntry form, dataO
+	else if type is 'separator'
+		new SeparatorEntry form, dataO
+	else if type is 'textarea'
+		new TextareaEntry form, dataO
+	else if type is 'selector'
+		new SelectorEntry form, dataO
