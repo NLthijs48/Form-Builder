@@ -1,4 +1,9 @@
 # SHARED:
+#   home:
+#		readme: <markdown> # Introduction text
+#	members:
+#		<memberId>:
+#			draft: <resultId> # Current draft
 #	form:
 #		entries:
 #			<identifier>:
@@ -6,11 +11,23 @@
 #				description: <string> # Description in Markdown
 #				required: <boolean> # Required or not
 #				type: <textline|textarea|instructions...>
-#				maxLength: <number> # Maximum line length
-#	results:
+#	submissions:
 #		maxId: <number>
 #		<id>:
 #			<identifier>: <value> # Value for the entry
+
+
+# Save a draft of a submission
+exports.client_saveDraft = (values) !->
+	log "[saveDraft] by #{member()}:", JSON.stringify(values)
+	return if !values?
+
+	formId = Db.shared.peek 'members', App.memberId(), 'draft'
+	if !formId?
+		formId = Db.shared.incr('submissions', 'maxId')
+		Db.shared.set 'members', App.memberId(), 'draft', formId
+
+	Db.shared.set 'submissions', formId, values
 
 
 # Remove an entry from the form
@@ -50,6 +67,8 @@ exports.client_editEntry = (identifier, data) !->
 			o = ((+entryO.peek('order'))||0)
 			data.order = o+1 if o >= data.order
 	Db.shared.set 'form', 'entries', identifier, data
+
+
 
 
 # Print member details

@@ -10,10 +10,22 @@ exports.render = ->
 	else if App.memberIsAdmin() and false # TODO remove
 		renderOverview()
 	else
-		new FormLayout()
+		renderIntro()
 
+
+# List with submissions
 renderOverview = !->
 	Ui.emptyText "Overview layout..."
+
+
+# Home page
+renderIntro = !->
+	Ui.button tr("Create application"), !->
+		Page.nav 'new'
+
+	if (readme = Db.shared.get 'home', 'readme')?
+		Dom.markdown readme
+
 
 # Form object
 class FormLayout
@@ -25,7 +37,7 @@ class FormLayout
 		Obs.observe !->
 			form.editingO.set Page.state.get('?edit')
 		@entries = {}
-		@formId = opts.formId
+		@formId = opts.formId # if 'new', render draft or empty
 
 		@render()
 
@@ -51,8 +63,18 @@ class FormLayout
 		# Submit
 		Obs.observe !->
 			return if form.editingO.get()
-			Form.setPageSubmit (values) !->
-				log 'onSubmit'
+			Page.setFooter [
+				label: tr("Save draft")
+				action: !->
+					log 'save draft'
+					result = Form.checkValues()
+					return if !result?
+					Server.send 'saveDraft', result
+			,
+				label: tr("Submit")
+				action: !->
+					log 'submit'
+			]
 
 		# Add entry button
 		Obs.observe !->
@@ -400,12 +422,10 @@ class CheckboxEntry extends Entry
 	renderType: !->
 		entry = @
 		Form.check
-			name: !->
-				Dom.style padding: '0 12px'
-				Dom.text entry.identifier
+			name: entry.identifier
 			text: entry.dataO.get 'title'
 			sub: entry.dataO.get 'description'
-		if entry.dataO.get 'required' # TODO render star somewhere?
+		if entry.dataO.get 'required'
 			Form.condition (value) ->
 				return tr("This checkbox is required") if !value[entry.identifier]
 
@@ -440,6 +460,8 @@ class SelectorEntry extends Entry
 
 	renderType: !->
 		entry = @
+
+		# Triggers dirty flag for some reason...
 		Form.selectInput
 			name: entry.identifier
 			title: "Things"
